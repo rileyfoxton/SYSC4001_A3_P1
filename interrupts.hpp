@@ -240,6 +240,62 @@ std::string get_memory_footer() {
     return buffer.str();
 }
 
+std::string get_exec_header() {
+
+    const int tableWidth = 49;
+
+    std::stringstream buffer;
+    
+    // Print top border
+    buffer << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
+    
+    // Print headers
+    buffer  << "|"
+            << std::setfill(' ') << std::setw(18) << "Time of Transition"
+            << std::setw(2) << "|"
+            << std::setfill(' ') << std::setw(3) << "PID"
+            << std::setw(2) << "|"
+            << std::setfill(' ') << std::setw(10) << "Old State"
+            << std::setw(2) << "|"
+            << std::setfill(' ') << std::setw(10) << "New State"
+            << std::setw(2) << "|" << std::endl;
+    
+    // Print separator
+    buffer << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
+
+    return buffer.str();
+
+}
+
+std::string log_exec_status(unsigned int current_time, int PID, states old_state, states new_state) {
+
+    const int tableWidth = 49;
+
+    std::stringstream buffer;
+
+    buffer  << "|"
+            << std::setfill(' ') << std::setw(18) << current_time
+            << std::setw(2) << "|"
+            << std::setw(3) << PID
+            << std::setw(2) << "|"
+            << std::setw(10) << old_state
+            << std::setw(2) << "|"
+            << std::setw(10) << new_state
+            << std::setw(2) << "|" << std::endl;
+
+    return buffer.str();
+}
+
+std::string get_exec_footer() {
+    const int tableWidth = 49;
+    std::stringstream buffer;
+
+    // Print bottom border
+    buffer << "+" << std::setfill('-') << std::setw(tableWidth) << "+" << std::endl;
+
+    return buffer.str();
+}
+
 void set_queue(std::vector<PCB> &job_queue, PCB running) {
     for(auto &process : job_queue) {
         if(process.PID == running.PID) {
@@ -334,14 +390,7 @@ void idle_CPU(PCB &running) {
     running.PID = -1;
 }
 
-void FCFS(std::vector<PCB> &list_processes, std::vector<PCB> new_processes, std::vector<PCB> &ready_queue) {
-    for(const auto process : new_processes) {
-        auto ready_process = process;
-        ready_process.state = READY;
-        set_queue(list_processes, ready_process);
-        ready_queue.push_back(ready_process);
-    }
-
+void FCFS(std::vector<PCB> &list_processes, std::vector<PCB> &ready_queue) {
     std::sort( 
                 ready_queue.begin(),
                 ready_queue.end(),
@@ -366,8 +415,13 @@ std::tuple<std::string, std::string> run_simulation(std::vector<PCB> list_proces
     idle_CPU(running);
 
     std::string memory_status;
+    std::string execution_status;
+
     memory_status = get_memory_header();
     memory_status += log_memory_status(current_time, job_queue);
+    execution_status = get_exec_header();
+
+    std::vector<PCB> prev_job_queue;
 
     while(!all_process_terminated(job_queue) || job_queue.empty()) {
         std::vector<PCB> new_processes;
@@ -375,73 +429,83 @@ std::tuple<std::string, std::string> run_simulation(std::vector<PCB> list_proces
         for(auto &process : list_processes) {
             if(process.arrival_time == current_time) {
                 assign_memory(process);
-                new_processes.push_back(process);
+
+                process.state = READY;
+                set_queue(list_processes, process);
+                ready_queue.push_back(process);
                 job_queue.push_back(process);
+
+                execution_status += log_exec_status(current_time, process.PID, NEW, READY);
                 memory_status += log_memory_status(current_time, job_queue);
             }
         }
 
-        //Check if IO event, send to wait queue
-        if(current_time == (running.start_time + running.io_freq)) {
+        if(running.PID != -1 && current_time == (running.start_time + running.io_freq)) {
             running.remaining_time = running.remaining_time - running.io_freq;
             running.state = WAITING;
             set_queue(job_queue, running);
             wait_queue.push_back(running);
 
-            std::cout << "At t = " << current_time << ": " << std::endl;
-            std::cout << print_PCB(job_queue) << std::endl;
+            execution_status += log_exec_status(current_time, running.PID, RUNNING, WAITING);
             idle_CPU(running);
         }
 
-        std::sort (
-            wait_queue.begin(),
-            wait_queue.end(),
-            [] (const PCB &first, const PCB &second) {
-                auto io_processing_time_1 = first.start_time + first.io_freq + first.io_duration;
-                auto io_processing_time_2 = second.start_time + second.io_freq + second.io_duration;
-                return io_processing_time_1 > io_processing_time_2;
-            }
-        );
+        if(wait_queue.size() > 1){
+            std::sort (
+                wait_queue.begin(),
+                wait_queue.end(),
+                [] (const PCB &first, const PCB &second) {
+                    auto io_processing_time_1 = first.start_time + first.io_freq + first.io_duration;
+                    auto io_processing_time_2 = second.start_time + second.io_freq + second.io_duration;
+                    return io_processing_time_1 > io_processing_time_2;
+                }
+            );
+        }
 
-        while(current_time == (wait_queue.back().start_time + wait_queue.back().io_freq + wait_queue.back().io_duration) )  {
+        while(!wait_queue.empty() && current_time == (wait_queue.back().start_time + wait_queue.back().io_freq + wait_queue.back().io_duration))  {
             wait_queue.back().state = READY;
             set_queue(job_queue, wait_queue.back());
             ready_queue.push_back(wait_queue.back());
             wait_queue.pop_back();
-            std::cout << "At t = " << current_time << ": " << std::endl;
-            std::cout << print_PCB(job_queue) << std::endl;
+
+            execution_status += log_exec_status(current_time, ready_queue.back().PID, WAITING, READY);
         }
 
-        FCFS(job_queue, new_processes, ready_queue);
-        std::cout << "At t = " << current_time << ": " << std::endl;
-        std::cout << print_PCB(job_queue) << std::endl;
+        FCFS(job_queue, ready_queue);
 
         if(current_time >= (running.remaining_time + running.start_time)) {
 
             if(ready_queue.empty()) {
-                terminate_process(running, job_queue);
-                memory_status += log_memory_status(current_time, job_queue);
+                if(running.PID != -1){
+                    execution_status += log_exec_status(current_time, running.PID, RUNNING, TERMINATED);
+                    terminate_process(running, job_queue);
+                    memory_status += log_memory_status(current_time, job_queue);
+                }
 
                 idle_CPU(running);
             } else {
-                terminate_process(running, job_queue);
-                memory_status += log_memory_status(current_time, job_queue);
+                if(running.PID != -1){
+                    execution_status += log_exec_status(current_time, running.PID, RUNNING, TERMINATED);
+                    terminate_process(running, job_queue);
+                    memory_status += log_memory_status(current_time, job_queue);
+                }
 
                 run_process(running, job_queue, ready_queue, current_time);
+                execution_status += log_exec_status(current_time, running.PID, READY, RUNNING);
             }
-
-            std::cout << "At t = " << current_time << ": " << std::endl;
-            std::cout << print_PCB(job_queue) << std::endl;
         }
 
-
         current_time++;
+        std::cout << execution_status << std::endl;
     }
 
     memory_status += get_memory_footer();
+    execution_status += get_exec_footer();
+
+    std::cout << execution_status << std::endl;
     std::cout << memory_status << std::endl;
 
-    return std::make_tuple("Hello", memory_status);
+    return std::make_tuple(execution_status, memory_status);
 }
 
 #endif
