@@ -5,7 +5,7 @@
  * 
  */
 
-#include<interrupts_student1_student2.hpp>
+#include<interrupts_RileyFoxton_EstebanHeidrich.hpp>
 
 void FCFS(std::vector<PCB> &ready_queue) {
     std::sort( 
@@ -28,6 +28,13 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
     unsigned int current_time = 0;
     PCB running;
+
+    std::vector<int> time_last_IO;
+    std::vector<int> time_in_IO;
+    unsigned int running_since_IO = 0;
+    unsigned int start_slice = current_time;
+    int sliceLeft = SLICE;
+    bool switchProcess = false;
 
     //Initialize an empty running process
     idle_CPU(running);
@@ -55,21 +62,92 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
                 process.state = READY;  //Set the process state to READY
                 ready_queue.push_back(process); //Add the process to the ready queue
+                /////
+                //Process has never had an IO
+                time_last_IO.push_back(current_time);
+                /////
                 job_list.push_back(process); //Add it to the list of processes
 
                 execution_status += print_exec_status(current_time, process.PID, NEW, READY);
+
             }
         }
 
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
         //This mainly involves keeping track of how long a process must remain in the ready queue
+        for(int i = 0; i<wait_queue.size();i++){
+            if(wait_queue.at(i).io_duration <= time_in_IO.at(i) && wait_queue.at(i).io_duration >= 0){
+                ready_queue.push_back(wait_queue.at(i));
+                time_last_IO.push_back(current_time);
 
+                execution_status += print_exec_status(current_time, wait_queue.at(i).PID, WAITING, READY);
+                wait_queue.at(i).state = READY;
+
+                wait_queue.erase(wait_queue.begin()+i);
+                time_in_IO.erase(time_in_IO.begin()+i);
+            }
+            std::cout<<"In waiting\n";
+        }
         /////////////////////////////////////////////////////////////////
 
         //////////////////////////SCHEDULER//////////////////////////////
-        FCFS(ready_queue); //example of FCFS is shown here
-        /////////////////////////////////////////////////////////////////
+        if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
+            if(ready_queue.size()>0){
+                running = ready_queue.front();
+                running_since_IO = 0;
+                sliceLeft = SLICE;
+                if(running.start_time<0){
+                    running.start_time = current_time;
+                }
+                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
 
+                ready_queue.erase(ready_queue.begin());
+                time_last_IO.erase(time_last_IO.begin());
+                std::cout<<std::to_string(current_time)+"\n";
+            }
+        }
+        switchProcess = false;
+        current_time ++;
+        for(int i = 0; i<time_in_IO.size();i++){
+            time_in_IO.at(i)++;
+        }
+        if(running.partition_number>-1){
+            running.remaining_time--;
+            sliceLeft--;
+            running_since_IO++;
+        }
+        if(running.remaining_time<=0 && running.partition_number > -1){
+            execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
+            running.state = TERMINATED;
+
+            terminate_process(running, job_list);
+
+            switchProcess = true;
+            std::cout<<"terminated\n";
+        }
+        else if(sliceLeft<=0 && running.partition_number > -1){
+            execution_status += print_exec_status(current_time, running.PID, RUNNING, READY);
+            running.state = READY;
+
+            ready_queue.push_back(running);
+            time_last_IO.push_back(running_since_IO);
+
+            switchProcess = true;
+            std::cout<<"slice up\n";
+        }
+        else if(running_since_IO>=running.io_freq && running.io_freq > 0 && running.io_duration > 0){
+            execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
+            running.state = WAITING;
+
+            wait_queue.push_back(running);
+            time_in_IO.push_back(0);
+
+            idle_CPU(running);
+            
+            switchProcess = true;
+            std::cout<<"IO burst\n";
+        }
+        /////////////////////////////////////////////////////////////////
     }
     
     //Close the output table

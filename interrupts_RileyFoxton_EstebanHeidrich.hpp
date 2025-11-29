@@ -7,6 +7,7 @@
 
 #ifndef INTERRUPTS_HPP_
 #define INTERRUPTS_HPP_
+#define SLICE 100
 
 #include<iostream>
 #include<fstream>
