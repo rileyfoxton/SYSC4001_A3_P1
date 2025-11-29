@@ -160,7 +160,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             running.state = TERMINATED;
 
             terminate_process(running, job_list);
-
+            idle_CPU(running);
             switchProcess = true;
             //std::cout<<"terminated\n";
         }

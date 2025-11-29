@@ -65,7 +65,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 process.state = READY;  //Set the process state to READY
                 if(ready_queue.size()==0){
                     ready_queue.push_back(process); //Add the process to the ready queue
-                    time_last_IO.push_back(current_time);
+                    time_last_IO.push_back(0);
                 }
                 else{
                     track = 0;
@@ -73,7 +73,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                     while(track<ready_queue.size()){
                         if(process.PID>ready_queue.at(track).PID){
                             ready_queue.insert(ready_queue.begin()+track, process);
-                            time_last_IO.insert(time_last_IO.begin()+track, current_time);
+                            time_last_IO.insert(time_last_IO.begin()+track, 0);
                             track = ready_queue.size()+1;
                             inserted = true;
                         }
@@ -81,7 +81,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                     }
                     if(!inserted){
                         ready_queue.insert(ready_queue.end(), process);
-                        time_last_IO.insert(time_last_IO.end(), current_time);
+                        time_last_IO.insert(time_last_IO.end(), 0);
                     }
                 }
                 job_list.push_back(process); //Add it to the list of processes
@@ -97,7 +97,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             if(wait_queue.at(i).io_duration <= time_in_IO.at(i) && wait_queue.at(i).io_duration >= 0){
                 if(ready_queue.size()==0){
                     ready_queue.push_back(wait_queue.at(i)); //Add the process to the ready queue
-                    time_last_IO.push_back(current_time);
+                    time_last_IO.push_back(0);
                 }
                 else{
                     track = 0;
@@ -105,7 +105,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                     while(track<ready_queue.size()){
                         if(wait_queue.at(i).PID>ready_queue.at(track).PID){
                             ready_queue.insert(ready_queue.begin()+track, wait_queue.at(i));
-                            time_last_IO.insert(time_last_IO.begin()+track, current_time);
+                            time_last_IO.insert(time_last_IO.begin()+track, 0);
                             track = ready_queue.size()+1;
                             inserted = true;
                         }
@@ -113,9 +113,14 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                     }
                     if(!inserted){
                         ready_queue.insert(ready_queue.end(), wait_queue.at(i));
-                        time_last_IO.insert(time_last_IO.end(), current_time);
+                        time_last_IO.insert(time_last_IO.end(), 0);
                     }
                 }
+                execution_status += print_exec_status(current_time, wait_queue.at(i).PID, WAITING, READY);
+                wait_queue.at(i).state = READY;
+
+                wait_queue.erase(wait_queue.begin()+i);
+                time_in_IO.erase(time_in_IO.begin()+i);
             }
             std::cout<<"In waiting\n";
         }
@@ -125,7 +130,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
         if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
             if(ready_queue.size()>0){
                 running = ready_queue.back();
-                running_since_IO = 0;
+                running_since_IO = time_last_IO.back();
                 sliceLeft = SLICE;
                 if(running.start_time<0){
                     running.start_time = current_time;
@@ -152,7 +157,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             running.state = TERMINATED;
 
             terminate_process(running, job_list);
-
+            idle_CPU(running);
             switchProcess = true;
             std::cout<<"terminated\n";
         }
@@ -165,7 +170,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             while(track<ready_queue.size()){
                 if(running.PID>ready_queue.at(track).PID){
                     ready_queue.insert(ready_queue.begin()+track, running);
-                    time_last_IO.insert(time_last_IO.begin()+track, current_time);
+                    time_last_IO.insert(time_last_IO.begin()+track, running_since_IO);
                     track = ready_queue.size()+1;
                     inserted = true;
                 }
@@ -173,13 +178,29 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             }
             if(!inserted){
                 ready_queue.insert(ready_queue.end(), running);
-                time_last_IO.insert(time_last_IO.end(), current_time);
+                time_last_IO.insert(time_last_IO.end(), running_since_IO);
             }
 
             switchProcess = true;
             std::cout<<"slice up\n";
         }
-        else if(running_since_IO>=running.io_freq && running.io_freq > 0 && running.io_duration > 0){
+        if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
+            if(ready_queue.size()>0){
+                running = ready_queue.back();
+                running_since_IO = time_last_IO.back();
+                sliceLeft = SLICE;
+                if(running.start_time<0){
+                    running.start_time = current_time;
+                }
+                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+
+                ready_queue.erase(ready_queue.end());
+                time_last_IO.erase(time_last_IO.end());
+                std::cout<<std::to_string(current_time)+"\n";
+            }
+            switchProcess = false;
+        }
+        if(running_since_IO>=running.io_freq && running.io_freq > 0 && running.io_duration > 0){
             execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
             running.state = WAITING;
 
