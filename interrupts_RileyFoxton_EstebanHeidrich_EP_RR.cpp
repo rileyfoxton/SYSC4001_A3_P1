@@ -142,6 +142,26 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
         //////////////////////////SCHEDULER//////////////////////////////
         
+        if(ready_queue.back().PID<running.PID){
+            track = 0;
+            inserted = false;
+            while(track<ready_queue.size()){
+                //insert where the priority is less than the process in front of it
+                if(running.PID>ready_queue.at(track).PID){
+                    ready_queue.insert(ready_queue.begin()+track, running);
+                    time_last_IO.insert(time_last_IO.begin()+track, running_since_IO);
+                    track = ready_queue.size()+1;
+                    inserted = true;
+                }
+                track++;
+            }
+            //if it has not been inserted yet put it at the front
+            if(!inserted){
+                ready_queue.insert(ready_queue.end(), running);
+                time_last_IO.insert(time_last_IO.end(), running_since_IO);
+            }
+            switchProcess = true;
+        }
         //if the flag for changing is active or there is no process running but the ready queue has an item
         if((switchProcess && ready_queue.size()>0) || (ready_queue.size()>0 && running.PID<0)){
             
