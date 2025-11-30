@@ -142,7 +142,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
         //////////////////////////SCHEDULER//////////////////////////////
         
-        if(ready_queue.back().PID<running.PID){
+        if(ready_queue.back().PID<running.PID && running.PID>-1){
             track = 0;
             inserted = false;
             while(track<ready_queue.size()){
@@ -202,7 +202,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             running_since_IO++;
         }
         //if the process is done executing
-        if(running.remaining_time<=0 && running.partition_number > -1){
+        if(running.remaining_time<=0 && running.PID > -1){
             //update the table and state
             execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
             running.state = TERMINATED;
@@ -216,7 +216,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
             switchProcess = true;
         }
         //if the process is being kicked out due to the slice time being up
-        else if(sliceLeft<=0 && running.partition_number > -1){
+        else if(sliceLeft<=0 && running.PID > -1){
             //update the table and state
             execution_status += print_exec_status(current_time, running.PID, RUNNING, READY);
             running.state = READY;
