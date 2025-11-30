@@ -62,106 +62,129 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
                 process.state = READY;  //Set the process state to READY
                 ready_queue.push_back(process); //Add the process to the ready queue
-                /////
-                //Process has never had an IO
                 time_last_IO.push_back(0);
-                /////
                 job_list.push_back(process); //Add it to the list of processes
 
                 execution_status += print_exec_status(current_time, process.PID, NEW, READY);
-
+                //cout to help calculate metrics
+                std::cout<<"ID: "+ std::to_string(process.PID)+ ". Arrived: "+ std::to_string(current_time)<< std::endl;
             }
         }
 
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
         //This mainly involves keeping track of how long a process must remain in the ready queue
         for(int i = 0; i<wait_queue.size();i++){
+            //if the process is done waiting for the IO
             if(wait_queue.at(i).io_duration <= time_in_IO.at(i) && wait_queue.at(i).io_duration >= 0){
+                //add the process to the back of the ready queue
                 ready_queue.push_back(wait_queue.at(i));
                 time_last_IO.push_back(0);
-
+                //update state and table
                 execution_status += print_exec_status(current_time, wait_queue.at(i).PID, WAITING, READY);
                 wait_queue.at(i).state = READY;
-
+                //remove the process from the wait queue
                 wait_queue.erase(wait_queue.begin()+i);
                 time_in_IO.erase(time_in_IO.begin()+i);
             }
-            std::cout<<"In waiting\n";
         }
         /////////////////////////////////////////////////////////////////
 
         //////////////////////////SCHEDULER//////////////////////////////
-        if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
-            if(ready_queue.size()>0){
-                running = ready_queue.front();
-                running_since_IO = time_last_IO.front();
-                sliceLeft = SLICE;
-                if(running.start_time<0){
-                    running.start_time = current_time;
-                }
-                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+        
+        //if the flag for changing is active or there is no process running but the ready queue has an item
+        if((switchProcess&&ready_queue.size()>0) || (ready_queue.size()>0 && running.PID<0)){
 
-                ready_queue.erase(ready_queue.begin());
-                time_last_IO.erase(time_last_IO.begin());
-                std::cout<<std::to_string(current_time)+"\n";
+            //change the running process and reset the slice time
+            running = ready_queue.front();
+            running_since_IO = time_last_IO.front();
+            sliceLeft = SLICE;
+
+            //if the process hasnt been run before set its start time
+            if(running.start_time<0){
+                running.start_time = current_time;
+                //cout to help calculate metrics
+                std::cout<<"ID: "+ std::to_string(running.PID)+ ". Started: "+ std::to_string(current_time)<< std::endl;
             }
+
+            //update table and remove item from the ready queue
+            execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+            ready_queue.erase(ready_queue.begin());
+            time_last_IO.erase(time_last_IO.begin());
         }
+        //disable the change process flag and increment the time
         switchProcess = false;
         current_time ++;
+        //increment the wait time for the processes waiting for I/O
         for(int i = 0; i<time_in_IO.size();i++){
             time_in_IO.at(i)++;
         }
+        //increment the time processes have been in the ready queue
+        for(int i = 0; i<ready_queue.size();i++){
+            ready_queue.at(i).time_in_ready+=1;
+        }
+        //if there is a process runnning decrement the slice time and the time remaining
+        //increase the counter to the next I/O
         if(running.partition_number>-1){
             running.remaining_time--;
             sliceLeft--;
             running_since_IO++;
         }
+        //if the process is done executing
         if(running.remaining_time<=0 && running.partition_number > -1){
+            //update the table and state
             execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
             running.state = TERMINATED;
+
+            //cout to help calculate metrics
+            std::cout<<"ID: "+ std::to_string(running.PID)+ ". Ended: "+ std::to_string(current_time)<< std::endl;
+            std::cout<<"ID: "+ std::to_string(running.PID)+ ". Time Ready: "+ std::to_string(running.time_in_ready)<< std::endl;
 
             terminate_process(running, job_list);
             idle_CPU(running);
             switchProcess = true;
-            std::cout<<"terminated\n";
         }
+        //if the process is being kicked out due to the slice time being up
         else if(sliceLeft<=0 && running.partition_number > -1){
+            //update the table and state
             execution_status += print_exec_status(current_time, running.PID, RUNNING, READY);
             running.state = READY;
-
+            //insert the process at the back of the ready queue
             ready_queue.push_back(running);
             time_last_IO.push_back(running_since_IO);
 
             switchProcess = true;
-            std::cout<<"slice up\n";
         }
-        if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
-            if(ready_queue.size()>0){
-                running = ready_queue.front();
-                running_since_IO = time_last_IO.front();
-                sliceLeft = SLICE;
-                if(running.start_time<0){
-                    running.start_time = current_time;
-                }
-                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+        //update the running process if needed
+        if((switchProcess && ready_queue.size()>0)|| (ready_queue.size()>0 && running.PID<0)){
+            //update running to the next waiting process
+            running = ready_queue.front();
+            running_since_IO = time_last_IO.front();
+            sliceLeft = SLICE;
 
-                ready_queue.erase(ready_queue.begin());
-                time_last_IO.erase(time_last_IO.begin());
-                std::cout<<std::to_string(current_time)+"\n";
+            if(running.start_time<0){
+                running.start_time = current_time;
+                //cout to help calculate metrics
+                std::cout<<"ID: "+ std::to_string(running.PID)+ ". Started: "+ std::to_string(current_time)<< std::endl;
             }
+            execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+            //remove process from the ready queue
+            ready_queue.erase(ready_queue.begin());
+            time_last_IO.erase(time_last_IO.begin());
+        
             switchProcess = false;
         }
+        //check if the running process need to be moved to the wait queue
         if(running_since_IO>=running.io_freq && running.io_freq > 0 && running.io_duration > 0){
+            //update the table
             execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
             running.state = WAITING;
-
+            //insert in the wait queue
             wait_queue.push_back(running);
             time_in_IO.push_back(0);
 
             idle_CPU(running);
             
             switchProcess = true;
-            std::cout<<"IO burst\n";
         }
         /////////////////////////////////////////////////////////////////
     }

@@ -63,14 +63,17 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 assign_memory(process);
 
                 process.state = READY;  //Set the process state to READY
-                
+                //This block related to the proper insertion of the newly arrived process
+                //if the ready queue is empty then add it to the front
                 if(ready_queue.size()==0){
-                    ready_queue.push_back(process); //Add the process to the ready queue
+                    ready_queue.push_back(process); 
                     time_last_IO.push_back(current_time);
                 }
                 else{
                     track = 0;
                     inserted = false;
+                    //if the ready queue is not empty then insert it in the first place where the priority (definined by the PID)
+                    //is greater than the PID before it
                     while(track<ready_queue.size()){
                         if(process.PID>ready_queue.at(track).PID){
                             ready_queue.insert(ready_queue.begin()+track, process);
@@ -80,6 +83,7 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                         }
                         track++;
                     }
+                    //if nothing was inserted then it is the highest priority and should go at the end
                     if(!inserted){
                         ready_queue.insert(ready_queue.end(), process);
                         time_last_IO.insert(time_last_IO.end(), current_time);
@@ -88,17 +92,16 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
 
                 job_list.push_back(process); //Add it to the list of processes
                 execution_status += print_exec_status(current_time, process.PID, NEW, READY);
+                //cout to help calculate metrics
+                std::cout<<"ID: "+ std::to_string(process.PID)+ ". Arrived: "+ std::to_string(current_time)<< std::endl;
             }
-        }
-
-        for(PCB p: ready_queue){
-            std::cout<<std::to_string(p.PID)+"\n";
         }
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
         //This mainly involves keeping track of how long a process must remain in the ready queue
         for(int i = 0; i<wait_queue.size();i++){
+            //if the process at i has been in the wait queue equal to or longer than the io duration and the io duration is a positive number
             if(wait_queue.at(i).io_duration <= time_in_IO.at(i) && wait_queue.at(i).io_duration >= 0){
-
+                //if the ready queue is empty insert it at the front
                 if(ready_queue.size()==0){
                     ready_queue.push_back(wait_queue.at(i)); //Add the process to the ready queue
                     time_last_IO.push_back(current_time);
@@ -106,7 +109,10 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                 else{
                     track = 0;
                     inserted = false;
+
+                    //if the ready queue is not empty then insert it in the first place where the priority (definined by the PID)
                     while(track<ready_queue.size()){
+                        //is greater than the PID before it
                         if(wait_queue.at(i).PID>ready_queue.at(track).PID){
                             ready_queue.insert(ready_queue.begin()+track, wait_queue.at(i));
                             time_last_IO.insert(time_last_IO.begin()+track, current_time);
@@ -115,66 +121,82 @@ std::tuple<std::string /* add std::string for bonus mark */ > run_simulation(std
                         }
                         track++;
                     }
+                    //if nothing was inserted then it is the highest priority and should go at the end
                     if(!inserted){
                         ready_queue.insert(ready_queue.end(), wait_queue.at(i));
                         time_last_IO.insert(time_last_IO.end(), current_time);
                     }
                 }
 
+                //clear the process from the wait queue and adjust state
                 execution_status += print_exec_status(current_time, wait_queue.at(i).PID, WAITING, READY);
                 wait_queue.at(i).state = READY;
-
+                
                 wait_queue.erase(wait_queue.begin()+i);
                 time_in_IO.erase(time_in_IO.begin()+i);
             }
-            //std::cout<<"In waiting\n";
         }
         /////////////////////////////////////////////////////////////////
 
         //////////////////////////SCHEDULER//////////////////////////////
-        if(switchProcess || (ready_queue.size()>0 && running.PID<0)){
-            if(ready_queue.size()>0){
-                running = ready_queue.back();
-                running_since_IO = 0;
-                if(running.start_time<0){
-                    running.start_time = current_time;
-                }
-                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+        if((switchProcess&&ready_queue.size()>0) || (ready_queue.size()>0 && running.PID<0)){
 
-                ready_queue.erase(ready_queue.end());
-                time_last_IO.erase(time_last_IO.end());
-                //std::cout<<std::to_string(current_time)+"\n";
+            //change the running process
+            running = ready_queue.back();
+            running_since_IO = 0;
+            if(running.start_time<0){
+                running.start_time = current_time;
+                //cout to help calculate metrics
+                std::cout<<"ID: "+ std::to_string(running.PID)+ ". Started: "+ std::to_string(current_time)<< std::endl;
             }
+            //update table and remove item from the ready queue
+            execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+            ready_queue.erase(ready_queue.end());
+            time_last_IO.erase(time_last_IO.end());
         }
+        //disable the change process flag and increment the time
         switchProcess = false;
         current_time ++;
+        //increment the wait time for the processes waiting for I/O
         for(int i = 0; i<time_in_IO.size();i++){
             time_in_IO.at(i)++;
         }
+        //increment the time processes have been in the ready queue
+        for(int i = 0; i<ready_queue.size();i++){
+            ready_queue.at(i).time_in_ready+=1;
+        }
+        //if there is a process runnning decrement the time remaining
+        //incrase the counter to the next I/O
         if(running.partition_number>-1){
             running.remaining_time--;
             running_since_IO++;
         }
+        //if the process is done executing
         if(running.remaining_time<=0 && running.partition_number > -1){
+            //update the table and state
             execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
             running.state = TERMINATED;
+
+            //cout to help calculate metrics
+            std::cout<<"ID: "+ std::to_string(running.PID)+ ". Ended: "+ std::to_string(current_time)<< std::endl;
+            std::cout<<"ID: "+ std::to_string(running.PID)+ ". Time Ready: "+ std::to_string(running.time_in_ready)<< std::endl;
 
             terminate_process(running, job_list);
             idle_CPU(running);
             switchProcess = true;
-            //std::cout<<"terminated\n";
         }
+        //check if the running process need to be moved to the wait queue
         else if(running_since_IO>=running.io_freq && running.io_freq > 0 && running.io_duration > 0){
+            //update the table
             execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
             running.state = WAITING;
-            
+            //insert in the wait queue
             wait_queue.push_back(running);
             time_in_IO.push_back(0);
             
             idle_CPU(running);
             
             switchProcess = true;
-            //std::cout<<"IO burst\n";
         }
         /////////////////////////////////////////////////////////////////
     }
